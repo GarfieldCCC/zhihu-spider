@@ -5,9 +5,10 @@ from bs4 import BeautifulSoup
 class zhihuspider:
 
     def __init__(self, Start, api):
+        self.user = []
         self.headers = {
-            'User-Agent': 'ozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.90 Safari/537.36'
-            , 'Referer': 'https://www.zhihu.com',
+            'User-Agent': 'ozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.90 Safari/537.36',
+            'Referer': 'https://www.zhihu.com',
             'Cookie': 'tgw_l7_route=6936aeaa581e37ec1db11b7e1aef240e; _zap=12b849f1-2a10-4347-b0e4-e45b52a9f912; _xsrf=mVWY6fjE7Noale8GFbNCFXE5ubfaMLIS; d_c0="AKCtie7Zmg-PTuvAdGEggxrY0_IVl0ZeYs0=|1560869932"; capsion_ticket="2|1:0|10:1560869933|14:capsion_ticket|44:NTVmMWJiNTY0NTQwNGI3OThlNzYxNjhhYWFlY2FiMTY=|286aa8976d49462a19c319d14591ea6d0ed40e5f04eb2f499e055e9dab711a50"; z_c0="2|1:0|10:1560869935|4:z_c0|92:Mi4xVjVoeUF3QUFBQUFBb0sySjd0bWFEeVlBQUFCZ0FsVk5MMHIyWFFEV3JJMWZTRzZKWGFaajFCeThodUpma21lN3dB|330c6a2bea600b930e3e59eb026694fa5bedb99ef8402426aff365dbcee4c088"; tst=r'}
 
         self.info = Start
@@ -83,8 +84,10 @@ class zhihuspider:
         return l
 
     def delete_repeat(self, list1, list2):
-        "去重"
-        return set(list1 + list2)
+        "合并去重排序"
+        self.user = list(set(self.user + list1 + list2))
+        return self.user
+        # return list(set(list1 + list2))
 
     def get_infos(self, url):
         proxies = self.proxies_pool[random.randint(0, 63)]
@@ -101,59 +104,47 @@ class zhihuspider:
         Dic['url_token'] = jo['url_token']
         return Dic
 
-    def get_info(self, list, base_url):
-        "获取信息"
-        l = []
-        for info in list:
-            url = base_url + str(info)
-            infomation = self.get_infos(url)
-            if self.user_is_valid(infomation):
-                l.append(infomation)
-        return l
-
     def get_url_token(self, URL):
-        "返回url_token列表"
+        "返回关注和被关注的url_token列表, 这个函数会更新self.user列表(因为delete_repeat)"
         following = self.get_json_data(URL, Type='/followees')
         followers = self.get_json_data(URL, Type='/followers')
-        return self.delete_repeat(self.get_all_list(following), self.get_all_list(followers))
+        return list(self.delete_repeat(self.get_all_list(following), self.get_all_list(followers)))
 
-    def process(self, URL):
-        "一个人的列表信息"
-        following = self.get_json_data(URL, Type='/followees')
-        followers = self.get_json_data(URL, Type='/followers')
-        all_list = self.delete_repeat(self.get_all_list(following), self.get_all_list(followers))
-        return self.get_info(all_list, self.info_url)
-
-    def Iteration(self, List, base_url, file_path):
+    def Iteration(self, Max, base_url, file_path):
         G = ['女', '男', '未知']
-        for item in List:
-            url = base_url + str(item) + "/"
-            print("url: ", url)
-            for i in self.process(url):
-                name = i['name']
-                gender = G[i['gender']]
-                signature = i['headline']
-                url_token = i['url_token']
-                # URL = "https://www.zhihu.com/people/" + str(url_token) + "/activities"
-                # following = get_numbers(URL, isFollowers=False)
-                # followers = get_numbers(URL, isFollowers=True)
+        index = -1
+
+        while len(self.user) < Max:
+            print(len(self.user))
+            index += 1
+            item = self.user[index]
+            url = base_url + str(item)
+            following = self.get_json_data(url, Type='/followees')
+            followers = self.get_json_data(url, Type='/followers')
+            self.user = list(set(self.user + self.get_all_list(following) + self.get_all_list(followers)))
+        for item in self.user:
+            url = base_url + str(item)
+            information = self.get_infos(url)
+            if self.user_is_valid(information):
+                name = information['name']
+                gender = G[information['gender']]
+                signature = information['headline']
+                url_token = information['url_token']
                 sentence = "标识: " + url_token + " 昵称: " + name + ", 性别: " + gender + ", 个性签名: " + signature + "\n"
                 print("昵称: ", name, ", 性别: ", gender, ", 个性签名: ", signature)
                 with open(file_path, 'a', encoding='utf-8') as f:
                     f.write(sentence)
-                time.sleep(round(random.random(), 1))
-        for item in List:
-            url = base_url + str(item) + "/"
-            new_list = self.get_url_token(url)
-            self.Iteration(new_list, base_url, file_path)
+                # time.sleep(round(random.random(), 1))
 
 
 if __name__ == '__main__':
     username = "Garfield"
     userurl = "garfield-21-38"
+    Max = 2048
 
     spider = zhihuspider(username, userurl)
 
     print("\n从“", username, "”开始获取知乎用户信息\n")
     List = spider.get_url_token(spider.start_json_url)
-    spider.Iteration(List, spider.info_url, spider.aim_path)
+    spider.user = List
+    spider.Iteration(Max, spider.info_url, spider.aim_path)
